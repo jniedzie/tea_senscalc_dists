@@ -3,7 +3,11 @@ project(user_analysis)
 
 # setup variables for macOS builds
 set(CMAKE_OSX_ARCHITECTURES "arm64")
-SET(CMAKE_OSX_DEPLOYMENT_TARGET 13.2)
+SET(CMAKE_OSX_DEPLOYMENT_TARGET 14.5)
+
+set(CMAKE_CXX_STANDARD 20)
+
+cmake_policy(SET CMP0054 OLD)
 
 # setup install directory to "bin"
 set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/bin")
@@ -17,15 +21,42 @@ SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH "/cvmfs/sft.cern.ch/lcg/releases/vdt/0.4.3-992df/x86_64-centos7-gcc8-opt/lib:/cvmfs/sft.cern.ch/lcg/releases/tbb/2019_U7-ba3eb/x86_64-centos7-gcc8-opt/lib:/cvmfs/sft.cern.ch/lcg/releases/Davix/0.7.3-d94fa/x86_64-centos7-gcc8-opt/lib64/:/cvmfs/sft.cern.ch/lcg/releases/png/1.6.37-9c2fe/x86_64-centos7-gcc8-opt/lib/:/cvmfs/sft.cern.ch/lcg/releases/GSL/2.5-32fc5/x86_64-centos7-gcc8-opt/lib/")
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-# # find Python
-find_package(Python3 REQUIRED)
-find_package(PythonLibs REQUIRED)
-include_directories(${PYTHON_INCLUDE_DIRS})
+# Check if CONDA_PREFIX is set
+if(DEFINED ENV{CONDA_PREFIX})
+    set(CONDA_PREFIX_PATH $ENV{CONDA_PREFIX})
+    set(Python3_EXECUTABLE "${CONDA_PREFIX_PATH}/bin/python3")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+    
+    if(Python3_FOUND)
+        # Set Python version variables manually if not set automatically
+        if(NOT DEFINED Python3_VERSION_MAJOR)
+            execute_process(COMMAND ${Python3_EXECUTABLE} -c "import sys; print(sys.version_info.major)"
+                            OUTPUT_VARIABLE Python3_VERSION_MAJOR
+                            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif()
+        if(NOT DEFINED Python3_VERSION_MINOR)
+            execute_process(COMMAND ${Python3_EXECUTABLE} -c "import sys; print(sys.version_info.minor)"
+                            OUTPUT_VARIABLE Python3_VERSION_MINOR
+                            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif()
+
+        message(STATUS "Deduced python version: ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
+        set(Python3_INCLUDE_DIR "${CONDA_PREFIX_PATH}/include/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
+        set(Python3_LIBRARY "${CONDA_PREFIX_PATH}/lib/libpython${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}.dylib")
+        
+        include_directories(${Python3_INCLUDE_DIR})
+    else()
+        message(FATAL_ERROR "Python3 not found in Conda environment")
+    endif()
+else()
+    message(FATAL_ERROR "CONDA_PREFIX is not set. Please activate your Conda environment.")
+endif()
 
 # setup tea as a subproject
 add_subdirectory(tea)
 
 message(STATUS "correctionlib includes at high_level: ${CORRECTIONLIB_INCLUDE_DIRS}")
+set(CORRECTIONLIB_INCLUDE_DIRS ${CORRECTIONLIB_INCLUDE_DIRS} CACHE INTERNAL "Correctionlib include dirs")
 
 # include all tea headers from tea/libs/*/include
 file(GLOB LIBS_SUBDIRS "tea/libs/*")
@@ -66,7 +97,7 @@ foreach(APP_SRC ${USER_APPS_SRC})
         target_link_libraries(${APP_NAME} PUBLIC core extensions histogramming ${ROOT_LIBRARIES} ${PYTHON_LIBRARIES})
     endif()
 
-    set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD 17)
+    set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD 20)
     set_target_properties(${APP_NAME} PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}")
     install(TARGETS ${APP_NAME} DESTINATION .)
 endforeach()
